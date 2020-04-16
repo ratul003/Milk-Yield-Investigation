@@ -1,0 +1,146 @@
+```{r,echo=TRUE,warning=FALSE,message=FALSE}
+library(knitr)
+library(ggplot2)
+library(alr4)
+library(tidyverse)
+#
+```
+
+## Data Defined
+
+Three cows were randomly assigned three different diets at three periods.  The three diets are A=roughage, B= partial grain, C=full grain.
+
+```{r}
+yields<-c(608,716,845,885,1086,711,940,766,832)
+cows<-c(1,1,1,2,2,2,3,3,3)
+diet<-c('A','B','C','B','C','A','C','A','B')
+milkyield<-data.frame(yields,cows,diet)
+milkyield$cows<- factor(milkyield$cows)
+summary(milkyield)
+str(milkyield)
+```
+
+## Summary Statistics Table
+
+Perform summary statistical analysis summarizing the response (yields) by cow and by diet separately.  Use the textbook or other investigation files for code ideas.
+
+```{r}
+yieldtable <- milkyield %>% group_by(diet) %>% summarise(meanYld = mean(yields), sdWt=sd(yields), n=n())
+kable(yieldtable)
+#
+yieldtable <- milkyield %>% group_by(cows) %>% summarise(meanYld = mean(yields), sdWt=sd(yields), n=n())
+kable(yieldtable)
+```
+
+
+
+### Graphical Display:
+
+```{r}
+p <- ggplot(data=milkyield, aes(x=diet, y=yields, colour=cows))
+p3 <- p + geom_point(aes(group=cows,fill=cows))
+p3 + xlab("Treatment") + ylab("Yields") 
+```
+
+The next display helps separate the diet and cow effects.
+
+```{r}
+p <- ggplot(data=milkyield, aes(x=diet, y=yields, colour=cows))
+p3 <- p + geom_line(aes(group=cows)) + geom_point(aes(group=cows,fill=cows))
+p3 + xlab("Treatment") + ylab("Yields") 
+```
+
+
+
+### lm command for RCB Model:
+
+Provide an lm command that could be used to estimate the RCB design model.  Fill in the content in the next code chunk and remove hash marks to run.
+
+```{r}
+mod <- lm(yields ~ diet + cows, data= milkyield)
+summary(mod)
+```
+
+
+
+### aov command for RCB Model:
+```{r}
+cowaov<-aov(yields ~ cows + diet, data=milkyield)
+coef(cowaov)
+summary(cowaov)
+```
+
+* NH: all $\alpha_{i}=0$ all diet effects are zero
+* AH: not all $\alpha_{i}=0$ not all diet effects are zero
+* $F= 19.5$
+  * p value is 0.0087 with (2,4) degrees of freedom.
+* Conclusion:  The data observed are unlikely to occur under the NH of no diet effects.  There is evidence to doubt this NH and evidence for the AH that cow diets affect milk production.
+
+#### Use EMMEANS
+
+```{r,warning=FALSE,message=FALSE}
+library(emmeans)
+#library(multcompView)
+cowemm<-emmeans(cowaov,"diet")
+CLD(cowemm)
+```
+
+The Tukey means diagram shows no significant evidence that the full grain diet has higher milk yield than the partial grain diet.  The variation is large due to only three observations per diet, so the power of the analysis is low.  The data does suggest that grain in the diet is related to higher yields.  I'd suggest evidence for using full grain because the treatment mean is over one se higher than partial grain. I'm pretty sure more data will establish clear evidence for the superiority of the full grain diet.  Even with these limited data, there is evidence the full grain diet has higher milk yield than the roughage (control) diet.
+
+#### Exercise for students
+
+Compare active treatment diets (B,C) with the control in a contrast, that is (B,C combined) vs A.  Build and execute contrast.
+
+```{r}
+LF <- contrast(cowemm, 
+               list(lambda1 = c(1, -.5, -.5)),
+               offset = c(0))
+confint(LF)
+summary(LF)
+```
+Answer:   There is evidence grain diets have significantly higher milk yields than the control diet.
+
+
+Compre active treatments (B,C) versus control A in a Dunnett comparison where we want to know if the active treatments are have greater milk yields than the control roughage (A).
+
+```{r,message=FALSE,warning=FALSE}
+library(multcomp)
+cow.mc <- glht(cowaov,linfct = mcp(diet = "Dunnett"),alternative = "greater")
+summary(cow.mc)
+confint(cow.mc, level = 0.95)
+```
+
+How does the previous code block results compare to that immediately below?  Why do they differ?
+  
+  ```{r}
+contrast(cowemm,"trt.vs.ctrl")
+confint(contrast(cowemm,"trt.vs.ctrl"))
+```
+
+
+Answer:  Both comparisons of the grain diets (full and partial) compared to control show evidence that the grain diets have higher milk yields than the control diet after adjusting the multiple comparisons with the Dunnett method.
+
+
+### LMER Approach
+
+```{r,warning=FALSE,message=FALSE}
+library(lme4)
+cow.lmer <- lmer(yields ~ diet + (1|cows),data=milkyield,REML=FALSE)
+summary(cow.lmer)
+cow.null <- lmer(yields ~ 1 + (1|cows), data=milkyield, REML=FALSE)
+summary(cow.null)
+anova(cow.null, cow.lmer,test="LRT")
+```
+
+The likelihood ratio test for diet effects establishes clear evidence of differences in milk yield between diets.
+
+```{r}
+pairs(emmeans(cow.lmer,"diet"))
+confint(pairs(emmeans(cow.lmer,"diet")))
+```
+The emmeans comparisons show evidence that each diet differs significantly from each other with respect to milk yield.  Both grain diets have significantly higher milk yields than the control, and the full grain diet has higher yield than the partial grain diet.
+
+### Ignore The Blocks:
+```{r}
+cowaov<-aov(yields ~ diet, data=milkyield)
+summary(cowaov)
